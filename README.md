@@ -72,15 +72,33 @@ kagujjecode rotate
 kagujjecode status
 ```
 
-### 3. Model Customization
+### 3. Model & Provider Management
+
+KagujjeCode includes full multi-provider and custom model support with zero configuration friction.
 
 ```bash
-# Inspect current active model
-kagujjecode model
+# List all available models, their providers, and readiness status
+kagujjecode model list
 
-# Switch active model
+# Inspect or switch current active model
+kagujjecode model
 kagujjecode model coarena/gemini-3-8-flash
 kagujjecode model anthropic/claude-3-7-sonnet
+kagujjecode model deepseek/deepseek-chat
+
+# List all supported AI providers and configured API keys
+kagujjecode provider list
+
+# Configure provider API key and optional custom endpoint
+kagujjecode provider set deepseek sk-your-key-here
+kagujjecode provider set openai sk-your-key-here
+kagujjecode provider set custom sk-your-key-here http://10.0.0.5:8000/v1
+
+# Remove a provider key
+kagujjecode provider remove deepseek
+
+# Register custom model identifiers
+kagujjecode custom add my-finetuned-llama "Llama 3.3 Fine-tuned" 128000
 ```
 
 ### 4. Unrestricted Prompts & Permissions
