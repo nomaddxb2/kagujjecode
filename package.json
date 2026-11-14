@@ -1,0 +1,44 @@
+{
+  "name": "kagujjecode",
+  "version": "1.0.0",
+  "description": "Unrestricted, limit-free OpenCode alternative for Android Termux with automated musl patching, fingerprint rotation, and bypass suite",
+  "main": "bin/kagujjecode",
+  "bin": {
+    "kagujjecode": "bin/kagujjecode"
+  },
+  "keywords": [
+    "kagujjecode",
+    "opencode",
+    "termux",
+    "android",
+    "ai",
+    "coding-agent",
+    "bypass",
+    "unlimited",
+    "aarch64",
+    "musl",
+    "ollama"
+  ],
+  "author": "Dickson Kagujje <dicksonkagujje@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nomaddxb2/kagujjecode.git"
+  },
+  "homepage": "https://github.com/nomaddxb2/kagujjecode#readme",
+  "bugs": {
+    "url": "https://github.com/nomaddxb2/kagujjecode/issues"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "plugins/",
+    "release-checksums.json",
+    "install.sh",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

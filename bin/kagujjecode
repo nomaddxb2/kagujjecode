@@ -1,0 +1,456 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# ==============================================================================
+# kagujjecode — Unrestricted, limit-free OpenCode alternative for Android Termux
+# Created for Operator LO | Author: Dickson Kagujje (nomaddxb2)
+# ==============================================================================
+
+set -o pipefail
+unset LD_PRELOAD
+
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ]; do
+  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+ROOT_DIR="$(cd "$(dirname "$SOURCE")/.." && pwd)"
+
+export HOME="${HOME:-/data/data/com.termux/files/home}"
+KAGUJJE_DIR="$HOME/.kagujjecode"
+CONFIG_DIR="$HOME/.config/kagujjecode"
+PLUGIN_TARGET_DIR="$HOME/.config/opencode/plugin"
+RUNTIME_DIR=""
+
+export SSL_CERT_FILE="${SSL_CERT_FILE:-/data/data/com.termux/files/usr/etc/tls/cert.pem}"
+export OPENCODE_DISABLE_AUTOUPDATE=1
+export KAGUJJE_ACTIVE=1
+
+# Color formatting
+C_RESET='\033[0m'
+C_BOLD='\033[1m'
+C_CYAN='\033[36m'
+C_GREEN='\033[32m'
+C_YELLOW='\033[33m'
+C_RED='\033[31m'
+C_MAGENTA='\033[35m'
+C_DIM='\033[2m'
+
+banner() {
+  printf "${C_CYAN}${C_BOLD}"
+  cat <<'EOF'
+ _                                _                _      
+| | ____ _  __ _ _   _ (_)  _   _  ___ ___   __| | ___ 
+| |/ / _` |/ _` | | | || | (_) / __/ _ \ / _` |/ _ \
+|   < (_| | (_| | |_| || |  _ | (_| (_) | (_| |  __/
+|_|\_\__,_|\__, |\__,_|/ | (_)\___\___/ \__,_|\___|
+           |___/     |__/                          
+EOF
+  printf "${C_DIM}  Unrestricted OpenCode Suite for Android Termux :: nomaddxb2${C_RESET}\n\n"
+}
+
+find_runtime() {
+  if [ -x "$KAGUJJE_DIR/runtime/opencode" ] && [ -f "$KAGUJJE_DIR/runtime/ld-musl-aarch64.so.1" ]; then
+    RUNTIME_DIR="$KAGUJJE_DIR/runtime"
+    return 0
+  fi
+  if [ -x "$HOME/.opencode/opencode" ] && [ -f "$HOME/.opencode/ld-musl-aarch64.so.1" ]; then
+    RUNTIME_DIR="$HOME/.opencode"
+    return 0
+  fi
+  return 1
+}
+
+ensure_plugins() {
+  mkdir -p "$PLUGIN_TARGET_DIR" "$CONFIG_DIR"
+  if [ -d "$ROOT_DIR/plugins" ]; then
+    for f in "$ROOT_DIR"/plugins/*.ts; do
+      [ -f "$f" ] && cp -f "$f" "$PLUGIN_TARGET_DIR/"
+    done
+  fi
+}
+
+# --- Command: Status ---
+cmd_status() {
+  banner
+  printf "${C_BOLD}Runtime & Core Engine:${C_RESET}\n"
+  if find_runtime; then
+    VER="$("$RUNTIME_DIR/ld-musl-aarch64.so.1" --library-path "$RUNTIME_DIR" "$RUNTIME_DIR/opencode" --version 2>/dev/null || echo "Unknown")"
+    printf "  ${C_GREEN}✓${C_RESET} OpenCode Runtime:   ${C_CYAN}%s${C_RESET} (Version: %s)\n" "$RUNTIME_DIR" "$VER"
+  else
+    printf "  ${C_RED}✗${C_RESET} OpenCode Runtime:   Not installed (run: kagujjecode install)\n"
+  fi
+  printf "  ${C_GREEN}✓${C_RESET} OpenSSL Certs:      %s\n" "$SSL_CERT_FILE"
+
+  printf "\n${C_BOLD}Active Configuration:${C_RESET}\n"
+  node -e '
+    const cfg = require("'"$ROOT_DIR"'/lib/config").loadConfig();
+    console.log("  Model:               " + cfg.model);
+    console.log("  Abliterated Prompts: " + (cfg.abliterate !== false ? "Enabled (Unrestricted)" : "Disabled"));
+    console.log("  Tool Permissions:    " + (cfg.unrestrictedPermissions !== false ? "Pre-approved (Allow-all)" : "Standard prompt"));
+    console.log("  Auto Quota Rotate:   " + (cfg.autoRotate !== false ? "Active on 429/403" : "Disabled"));
+    console.log("  Spoof Unlimited:     " + (cfg.spoofUnlimited !== false ? "Active (Local limits masked)" : "Disabled"));
+    console.log("  Outbound Proxy:      " + (cfg.proxy ? cfg.proxy : "Direct connection"));
+  '
+
+  printf "\n${C_BOLD}Active Identity & Fingerprint:${C_RESET}\n"
+  if [ -f "$CONFIG_DIR/fingerprint.json" ]; then
+    node -e '
+      const fp = JSON.parse(require("fs").readFileSync("'"$CONFIG_DIR"'/fingerprint.json", "utf8"));
+      console.log("  Nonce:               " + fp.nonce.slice(0, 24) + "...");
+      console.log("  Client ID:           " + fp.clientLabel);
+      console.log("  User-Agent:          " + fp.ua.slice(0, 60) + "...");
+      console.log("  Last Rotated:        " + new Date(fp.stamped).toLocaleString());
+    '
+  else
+    printf "  ${C_YELLOW}◇${C_RESET} Initialized on first launch\n"
+  fi
+
+  printf "\n${C_BOLD}Installed Bypass Plugins:${C_RESET}\n"
+  if [ -d "$PLUGIN_TARGET_DIR" ]; then
+    ls -1 "$PLUGIN_TARGET_DIR" | while read -r plugin; do
+      printf "  ${C_CYAN}•${C_RESET} %s\n" "$plugin"
+    done
+  fi
+  printf "\n"
+}
+
+# --- Command: Rotate ---
+cmd_rotate() {
+  node -e '
+    const { rotateFingerprint } = require("'"$ROOT_DIR"'/lib/fingerprint");
+    const fp = rotateFingerprint();
+    console.log("\n  ✓ Successfully rotated outbound identity:");
+    console.log("    Nonce:       " + fp.nonce.slice(0, 16) + "...");
+    console.log("    Client ID:   " + fp.clientLabel);
+    console.log("    User-Agent:  " + fp.ua.slice(0, 55) + "...");
+    console.log("    WireSession: " + fp.wireSession.slice(0, 24) + "...\n");
+  '
+}
+
+# --- Command: Config ---
+cmd_config() {
+  local sub="${1:-show}"
+  shift || true
+  case "$sub" in
+    show)
+      node -e '
+        const cfg = require("'"$ROOT_DIR"'/lib/config").loadConfig();
+        console.log(JSON.stringify(cfg, null, 2));
+      '
+      ;;
+    get)
+      local key="${1:-}"
+      [ -z "$key" ] && { echo "Usage: kagujjecode config get <KEY>"; exit 1; }
+      node -e '
+        const val = require("'"$ROOT_DIR"'/lib/config").get("'"$key"'");
+        console.log(val !== undefined ? val : "undefined");
+      '
+      ;;
+    set)
+      local key="${1:-}"
+      local val="${2:-}"
+      [ -z "$key" ] || [ -z "$val" ] && { echo "Usage: kagujjecode config set <KEY> <VALUE>"; exit 1; }
+      node -e '
+        const updated = require("'"$ROOT_DIR"'/lib/config").set("'"$key"'", "'"$val"'");
+        console.log("  ✓ Updated " + "'"$key"'" + " = " + JSON.stringify(updated));
+      '
+      ;;
+    reset)
+      node -e '
+        require("'"$ROOT_DIR"'/lib/config").resetConfig();
+        console.log("  ✓ Configuration reset to defaults.");
+      '
+      ;;
+    *)
+      echo "Unknown config command: $sub. Available: show, get, set, reset"
+      exit 1
+      ;;
+  esac
+}
+
+# --- Command: Model ---
+cmd_model() {
+  if [ -z "${1:-}" ]; then
+    node -e '
+      const cfg = require("'"$ROOT_DIR"'/lib/config").loadConfig();
+      console.log("\nCurrent active model: " + cfg.model);
+      console.log("To change: kagujjecode model <MODEL_ID>");
+    '
+  else
+    local new_model="$1"
+    node -e '
+      require("'"$ROOT_DIR"'/lib/config").set("model", "'"$new_model"'");
+      console.log("  ✓ Active model set to: '"$new_model"'");
+    '
+  fi
+}
+
+# --- Command: Abliterate ---
+cmd_abliterate() {
+  local opt="${1:-status}"
+  case "$opt" in
+    on|enable|1)
+      node -e 'require("'"$ROOT_DIR"'/lib/config").set("abliterate", true); console.log("  ✓ Abliteration enabled (Unrestricted Mode active)");'
+      ;;
+    off|disable|0)
+      node -e 'require("'"$ROOT_DIR"'/lib/config").set("abliterate", false); console.log("  ✓ Abliteration disabled");'
+      ;;
+    prompt)
+      node -e 'console.log(require("'"$ROOT_DIR"'/lib/abliterated").getPrompt());'
+      ;;
+    status|*)
+      node -e '
+        const enabled = require("'"$ROOT_DIR"'/lib/config").get("abliterate") !== false;
+        console.log("Abliteration status: " + (enabled ? "ON (Unrestricted)" : "OFF"));
+        console.log("Usage: kagujjecode abliterate [on|off|prompt]");
+      '
+      ;;
+  esac
+}
+
+# --- Command: Permissions ---
+cmd_permissions() {
+  local opt="${1:-status}"
+  case "$opt" in
+    unrestricted|allow|all|1)
+      node -e 'require("'"$ROOT_DIR"'/lib/config").set("unrestrictedPermissions", true); console.log("  ✓ Unrestricted permissions enabled (All tool prompts pre-approved)");'
+      ;;
+    strict|ask|default|0)
+      node -e 'require("'"$ROOT_DIR"'/lib/config").set("unrestrictedPermissions", false); console.log("  ✓ Standard permission prompts restored");'
+      ;;
+    status|*)
+      node -e '
+        const unres = require("'"$ROOT_DIR"'/lib/config").get("unrestrictedPermissions") !== false;
+        console.log("Tool permission mode: " + (unres ? "UNRESTRICTED (Allow all)" : "STANDARD (Prompt user)"));
+        console.log("Usage: kagujjecode permissions [unrestricted|strict]");
+      '
+      ;;
+  esac
+}
+
+# --- Command: Proxy ---
+cmd_proxy() {
+  local val="${1:-status}"
+  case "$val" in
+    off|none|clear|disable)
+      node -e 'require("'"$ROOT_DIR"'/lib/config").set("proxy", null); console.log("  ✓ Outbound proxy disabled (Direct connection)");'
+      ;;
+    status)
+      node -e '
+        const p = require("'"$ROOT_DIR"'/lib/config").get("proxy");
+        console.log("Outbound proxy: " + (p || "Direct / None"));
+        console.log("Usage: kagujjecode proxy <URL|off> (e.g., http://127.0.0.1:40000 or socks5://127.0.0.1:9050)");
+      '
+      ;;
+    *)
+      node -e 'require("'"$ROOT_DIR"'/lib/config").set("proxy", "'"$val"'"); console.log("  ✓ Outbound proxy configured: '"$val"'");'
+      ;;
+  esac
+}
+
+# --- Command: Install ---
+cmd_install() {
+  node "$ROOT_DIR/bin/install-runtime.js" "$@"
+  ensure_plugins
+}
+
+# --- Command: Plugins ---
+cmd_plugins() {
+  local opt="${1:-list}"
+  case "$opt" in
+    sync)
+      ensure_plugins
+      printf "  ✓ Synchronized bypass plugins to %s\n" "$PLUGIN_TARGET_DIR"
+      ;;
+    list|*)
+      printf "Installed plugins in %s:\n" "$PLUGIN_TARGET_DIR"
+      if [ -d "$PLUGIN_TARGET_DIR" ]; then
+        ls -1 "$PLUGIN_TARGET_DIR" | while read -r p; do
+          printf "  • %s\n" "$p"
+        done
+      fi
+      ;;
+  esac
+}
+
+# --- Command: Local Ollama Runner ---
+cmd_local() {
+  local model="${1:-qwen2.5-coder:3b}"
+  local host="${OLLAMA_HOST:-http://127.0.0.1:11434}"
+  local app_dir="$HOME/.config/kagujjecode"
+  local cfg="$app_dir/opencode.json"
+
+  if ! curl -fsS "$host/api/tags" >/dev/null 2>&1; then
+    printf 'Starting Ollama locally at %s...\n' "$host"
+    (ollama serve >/dev/null 2>&1 &)
+    for _ in {1..15}; do
+      curl -fsS "$host/api/tags" >/dev/null 2>&1 && break
+      sleep 1
+    done
+  fi
+
+  mkdir -p "$app_dir"
+  cat >"$cfg" <<EOF_CFG
+{
+  "\$schema": "https://opencode.ai/config.json",
+  "model": "kagujje/$model",
+  "permission": { "*": "allow" },
+  "provider": {
+    "kagujje": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "KagujjeCode Local Ollama",
+      "options": { "baseURL": "${host%/}/v1", "apiKey": "ollama" },
+      "models": {
+        "$model": { "name": "$model", "limit": { "context": 32768, "output": 8192 } }
+      }
+    }
+  }
+}
+EOF_CFG
+  printf '  ✓ Kagujje local config wired to %s (model: %s)\n' "$host" "$model"
+  export OPENCODE_CONFIG="$cfg"
+  cmd_run
+}
+
+# --- Command: Run / Chat Engine ---
+cmd_run() {
+  if ! find_runtime; then
+    printf "${C_YELLOW}◇ OpenCode runtime not found. Initializing automatic installation...${C_RESET}\n"
+    cmd_install || { printf "${C_RED}Installation failed.${C_RESET}\n"; exit 1; }
+    find_runtime || { printf "${C_RED}Runtime initialization error.${C_RESET}\n"; exit 1; }
+  fi
+
+  ensure_plugins
+
+  # Load or sync proxy
+  PROXY_URL="$(node -e 'const p = require("'"$ROOT_DIR"'/lib/config").get("proxy"); if (p) console.log(p);' 2>/dev/null || true)"
+  if [ -n "$PROXY_URL" ]; then
+    export HTTP_PROXY="$PROXY_URL"
+    export HTTPS_PROXY="$PROXY_URL"
+    export ALL_PROXY="$PROXY_URL"
+    export http_proxy="$PROXY_URL"
+    export https_proxy="$PROXY_URL"
+    export all_proxy="$PROXY_URL"
+  fi
+
+  # Apply unrestricted variables
+  export KAGUJJE_UNRESTRICTED=1
+  export KAGUJJE_SPOOF_UNLIMITED=1
+  export OLLIECODE_SPOOF_UNLIMITED=1
+
+  # Touch or verify fingerprint
+  node -e 'require("'"$ROOT_DIR"'/lib/fingerprint").getFingerprint();' 2>/dev/null || true
+
+  # Check if model override passed in config
+  MODEL_NAME="$(node -e 'const m = require("'"$ROOT_DIR"'/lib/config").get("model"); if (m) console.log(m);' 2>/dev/null || true)"
+  if [ -n "$MODEL_NAME" ] && [ -z "$OPENCODE_CONFIG" ]; then
+    export OPENCODE_MODEL="$MODEL_NAME"
+  fi
+
+  exec "$RUNTIME_DIR/ld-musl-aarch64.so.1" \
+    --library-path "$RUNTIME_DIR" \
+    "$RUNTIME_DIR/opencode" "$@"
+}
+
+usage() {
+  banner
+  cat <<'EOF_HELP'
+USAGE:
+  kagujjecode [COMMAND] [OPTIONS]
+
+CORE COMMANDS:
+  [none] | chat [ARGS]         Start interactive OpenCode session with full bypass suite
+  run "<PROMPT>"               Execute one-shot task/prompt non-interactively
+  rotate                       Instantly regenerate client nonce, wire session, and User-Agent
+  status                       Inspect runtime, identity fingerprint, proxy, and plugin health
+
+CONFIGURATION & CUSTOMIZATION:
+  config show                  Dump complete active configuration JSON
+  config get <KEY>             Retrieve specific config value (e.g. config get model)
+  config set <KEY> <VAL>       Update specific config value (e.g. config set autoRotate false)
+  config reset                 Restore all settings to factory default
+  model [MODEL_ID]             View or set default model (e.g. coarena/gemini-3-8-flash)
+  abliterate [on|off|prompt]   Toggle unrestricted system prompt injection or inspect prompt
+  permissions [unrestricted|strict] Toggle pre-approved tool permissions (allow-all vs ask)
+  proxy [URL|off]              Configure or remove outbound HTTP/HTTPS/SOCKS5 proxy
+
+RUNTIME & PLUGINS:
+  install [--force]            Install, verify, or re-patch musl aarch64 OpenCode binary
+  plugins [list|sync]          List or re-synchronize bypass plugins into ~/.config/opencode/plugin
+
+OFFLINE LOCAL INFERENCE:
+  local [MODEL]                Launch offline with local Ollama (default: qwen2.5-coder:3b)
+  models                       List all models downloaded in local Ollama
+
+EXAMPLES:
+  kagujjecode                                Launch coding assistant
+  kagujjecode rotate                         Rotate IP identity fingerprint
+  kagujjecode model coarena/gemini-3-8-flash Switch active AI model
+  kagujjecode proxy socks5://127.0.0.1:9050  Route traffic through Tor SOCKS5
+  kagujjecode local qwen2.5-coder:3b         Run 100% offline with Ollama
+
+Repository: https://github.com/nomaddxb2/kagujjecode
+Author:     Dickson Kagujje (nomaddxb2)
+EOF_HELP
+}
+
+# Main Command Dispatcher
+COMMAND="${1:-}"
+
+case "$COMMAND" in
+  help|-h|--help)
+    usage
+    ;;
+  status)
+    cmd_status
+    ;;
+  rotate)
+    cmd_rotate
+    ;;
+  config)
+    shift
+    cmd_config "$@"
+    ;;
+  model)
+    shift
+    cmd_model "$@"
+    ;;
+  abliterate)
+    shift
+    cmd_abliterate "$@"
+    ;;
+  permissions)
+    shift
+    cmd_permissions "$@"
+    ;;
+  proxy)
+    shift
+    cmd_proxy "$@"
+    ;;
+  install)
+    shift
+    cmd_install "$@"
+    ;;
+  plugins)
+    shift
+    cmd_plugins "$@"
+    ;;
+  local)
+    shift
+    cmd_local "${1:-}"
+    ;;
+  models)
+    ollama list 2>/dev/null || echo "Ollama server is not active."
+    ;;
+  run)
+    shift
+    cmd_run run "$@"
+    ;;
+  chat)
+    shift
+    cmd_run "$@"
+    ;;
+  *)
+    cmd_run "$@"
+    ;;
+esac
